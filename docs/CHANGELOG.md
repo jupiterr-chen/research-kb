@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [0.2.0] — 2026-10-01 (中文状态面板 + 只读同步采集)
+
+### 新增
+- **中文状态面板**（根路径 `/`）：入库与 Windows 同步分层、总览卡、每来源计数与最近扫描、最近变化、异常/不可用、最近入库记录、元数据检索；本地 CSS/JS，无外部 CDN；Asia/Shanghai 时间显式标注；约 15s 自动刷新 + 只读“刷新状态”按钮；失败保留上次结果并提示过期。CSP 仅允许自身脚本/样式/接口，文档原文 sandbox CSP 不变；页面 DOM 全部用 `textContent` 写入。
+- **变更账本**：新增 `changes` 表与非破坏性迁移；按来源记录基线/新导入/元数据更新/新版本/当前版本变更/转不可用/恢复/内容冲突；只比较语义稳定字段，忽略观测时间戳与 fresh-hash 标志，无变化扫描为 0；升级播种每来源基线，不把既有文档误报为今日导入；失败来源与失败渲染分别记录；跨重启持久化。
+- **调度运行态**：`state/scheduler.json` 记录间隔、尝试/完成时间、结果与 `next_check_at=完成时间+间隔`，心跳 ~15s；心跳过期/停止时旧成功不再显示健康；手动入库不影响下次自动检查时间。
+- **只读同步采集器**：compose 新增 `status-collector`，仅 host 网络、无监听端口、只读挂载 Syncthing 配置并仅发 `GET`，写脱敏快照 `state/monitor/syncthing.json`；库服务新增 `GET /api/v1/status` 并只读该快照。同步状态严格判定（采集失败/过期/暂停/离线/远端状态未知/远端待传/完成），未知计数保持未知，设备以配置别名显示。
+- 配置新增可选 `sync_monitor`（`snapshot_path`、`stale_after_seconds`、`peer_alias`）；`.env.example` 增加可选采集变量。
+
+### 测试
+- Windows：113 run / 112 pass / 1 skip（symlink 权限）；Linux（容器同代码）：113 pass。
+- 新增 `test_changes`/`test_status`/`test_monitor`/`test_dashboard`：升级基线、无变化为零、新文档、元数据变更、新版本、缺失/恢复、失败来源/渲染、重启保留、运行/过期/停止/无历史调度、手动与自动下次时间分离、连接完成/远端积压/断开/远端状态不可知/采集超时/损坏与过期快照/未配置、面板脱敏、页面中文标签/CSP/无外部资源。
+
+### 修复（独立复验第 2 轮，truthfulness/safety）
+- **公开错误脱敏**：采集器对上游自由文本错误统一 `redact_text`（绝对路径→`[path]`、长 token→`[redacted]`、限长），库侧 `monitor.sanitize` 对字符串同样脱敏并二次防御；非空 `folder.error` 一律判为 error（不再被数值计数 0 掩盖）。
+- **缺失/无效数据失败关闭**：本地 folder 状态、远端完成度/积压、样本时间任一缺失或无效 → unknown/error/stale，绝不 complete；未知计数保持未知不按 0 处理；调度心跳/`next_check_at` 不可解析或状态未知 → stale，不再维持入库 ok。
+- **严格目标**：显式配置的 folder 或 peer 不存在时返回 error/unknown，不再回退到第一个无关 folder/device 并误标为 Windows 设备。
+
+### 部署
+- 仅本项目 compose 资源；library 重建执行非破坏性 schema 迁移，采集器新增；源挂载仍为只读，8765 绑定不变，Syncthing 管理面仍回环。迁移前以 SQLite 在线备份快照自有 catalog。
+
 ## [0.1.3] — 2026-10-01 (Codex review round 5: 恢复路径 + 发布准备)
 
 ### 修复 / 变更

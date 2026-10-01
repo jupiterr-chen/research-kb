@@ -23,6 +23,12 @@ Status: implementation complete; first-stage scope is metadata search only
   descriptor before every `GET/HEAD/Range/304`; changed bytes fail closed (409).
 - Scheduled ingestion (in-process hourly) with a cross-process lock.
 - Docker Compose project with read-only source mounts and a Syncthing sidecar.
+- Chinese status dashboard at `/` showing ingestion vs. Windows sync, last/next
+  checks, per-source counts, an honest change ledger and abnormal records.
+- Read-only Syncthing status collector (`status-collector` compose service):
+  host network for loopback REST access only, no listening port, sanitized
+  snapshot with no API key / full device id / host paths.
+- Public status API at `/api/v1/status` (same data the dashboard renders).
 
 ## Layout
 
@@ -49,8 +55,10 @@ All fixtures are synthetic; no real documents or source snapshots are needed.
    `RESEARCHKB_HOME`, `RESEARCHKB_REPORTS`, `RESEARCHKB_DISCORD`, and optionally
    `RESEARCHKB_BIND` (a trusted LAN address; default is loopback only).
 3. Copy `config/config.example.json` to `config/config.json` and adjust
-   `public_base_url` for your host.
+   `public_base_url` for your host. The optional `sync_monitor` block points the
+   dashboard at the sanitized snapshot written by the `status-collector`.
 4. Run `bash scripts/deploy.sh` (or `docker compose up -d --build`).
+5. Open the dashboard at `http://<host>:8765/`.
 
 See [docs/PUBLIC_RUNBOOK.md](docs/PUBLIC_RUNBOOK.md) for operations, backup and
 a safe restore procedure.

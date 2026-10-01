@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .catalog import Catalog
 from .config import Config
+from .dashboard import DASHBOARD_CSP, DASHBOARD_CSS, DASHBOARD_HTML, DASHBOARD_JS
 from .fileserve import (
     ContentUnavailable,
     PathNotAllowed,
@@ -19,7 +20,8 @@ from .fileserve import (
     open_validated,
     parse_range,
 )
-from .textutil import html_escape
+from .status import build_status
+
 
 CHUNK = 256 * 1024
 
@@ -61,6 +63,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._root(head_only)
             elif parts[0] == "healthz":
                 self._healthz(head_only)
+            elif parts[0] == "assets" and len(parts) == 2:
+                self._asset(parts[1], head_only)
             elif len(parts) >= 2 and parts[:2] == ["api", "v1"]:
                 self._api(parts[2:], query, head_only)
             else:
@@ -82,28 +86,32 @@ class Handler(BaseHTTPRequestHandler):
 
     # ----------------------------------------------------------------- routes
     def _root(self, head_only: bool) -> None:
-        counts = self.catalog.counts()
-        lines = [
-            "<!doctype html><html><head><meta charset=\"utf-8\"><title>Research KB</title></head><body>",
-            "<h1>Research KB library</h1>",
-            "<p>元数据检索服务。查询 API 仅做元数据（标题/摘要/日期/代码）检索，不是全文或语义检索。</p>",
-            "<ul>",
-        ]
-        for name in sorted(self.config.sources):
-            label = html_escape(name)
-            lines.append(
-                "<li>%s：<a href=\"/api/v1/search?source=%s\">/api/v1/search?source=%s</a></li>"
-                % (label, label, label)
-            )
-        lines.append("</ul>")
-        lines.append("<p>total documents: %d, available: %d, ready bytes: %d</p>" % (
-            counts["documents_total"], counts["documents_available"], counts["ready_bytes"]))
-        lines.append("</body></html>")
-        body = "".join(lines).encode("utf-8")
+        body = DASHBOARD_HTML.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+        self.send_header("Content-Security-Policy", DASHBOARD_CSP)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
+
+    def _asset(self, name: str, head_only: bool) -> None:
+        assets = {
+            "dashboard.css": ("text/css; charset=utf-8", DASHBOARD_CSS),
+            "dashboard.js": ("application/javascript; charset=utf-8", DASHBOARD_JS),
+        }
+        asset = assets.get(name)
+        if asset is None:
+            return self._error(404, "not found")
+        content_type, text = asset
+        body = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         if not head_only:
             self.wfile.write(body)
@@ -141,6 +149,8 @@ class Handler(BaseHTTPRequestHandler):
             self._search(query, head_only)
         elif parts and parts[0] == "sources":
             self._sources(head_only)
+        elif parts and parts[0] == "status":
+            self._status(head_only)
         elif len(parts) >= 3 and parts[0] == "documents":
             self._document(parts[1], "/".join(parts[2:]), head_only)
         elif len(parts) >= 3 and parts[0] == "files":
@@ -163,6 +173,9 @@ class Handler(BaseHTTPRequestHandler):
                 "counts": health["counts"],
             })
         self._send_json(200, payload, head_only)
+
+    def _status(self, head_only: bool) -> None:
+        self._send_json(200, build_status(self.config, self.catalog), head_only)
 
     def _search(self, query, head_only: bool) -> None:
         def first(key, default=None):

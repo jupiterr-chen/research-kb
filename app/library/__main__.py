@@ -9,6 +9,7 @@ import signal
 import sys
 import threading
 import time
+from datetime import timedelta
 
 from .api import build_server
 from .catalog import Catalog
@@ -16,6 +17,13 @@ from .config import Config
 from .ingest import Ingestor
 from .locking import FileLock
 from .markdown import render_vault
+from .runtime import (
+    parse_iso,
+    read_scheduler_state,
+    scheduler_state_path,
+    utc_now,
+    write_json_atomic,
+)
 
 
 DEFAULT_CONFIG = os.environ.get("RESEARCHKB_CONFIG", "/app/config/config.json")
@@ -27,29 +35,91 @@ def load_config(path: str) -> Config:
 
 
 class Scheduler:
+    """Periodic in-process ingestion with a persisted, honest runtime state.
+
+    The next automatic check is only ever derived from *this* scheduler's own
+    cadence (wait interval after the scheduled run finishes); unrelated manual
+    ingest runs recorded in ``ingest_runs`` never move it. A heartbeat keeps
+    ``updated_at`` fresh so the API can declare the scheduler stale/dead when the
+    worker stops instead of leaving an old success green forever.
+    """
+
+    HEARTBEAT_SECONDS = 15
+
     def __init__(self, config: Config):
         self.config = config
         self.stop_event = threading.Event()
         self.thread = None
+        self.heartbeat_thread = None
+        self._lock = threading.Lock()
+        self._state = {}
+        self._started_at = utc_now()
+
+    def _write(self, **updates) -> None:
+        with self._lock:
+            self._state.update(updates)
+            self._state["updated_at"] = utc_now()
+            self._state.setdefault("interval_seconds", max(60, int(self.config.ingest_interval_seconds)))
+            self._state.setdefault("started_at", self._started_at)
+            self._state.setdefault("kind", "scheduler")
+            try:
+                write_json_atomic(scheduler_state_path(self.config.state_dir), self._state)
+            except OSError:
+                pass
+
+    def _heartbeat(self) -> None:
+        while not self.stop_event.wait(self.HEARTBEAT_SECONDS):
+            self._write()
 
     def _loop(self) -> None:
         interval = max(60, int(self.config.ingest_interval_seconds))
+        self._write(state="idle", interval_seconds=interval, next_check_at=None)
         while not self.stop_event.is_set():
+            attempt_started = utc_now()
+            self._write(state="running", attempt_started_at=attempt_started, next_check_at=None)
             ingestor = Ingestor(self.config)
+            ok = False
+            error = None
             try:
-                ingestor.run()
+                result = ingestor.run()
+                ok = bool(result.get("ok"))
+                if not ok:
+                    error = next(
+                        (value.get("error") for value in result.get("sources", {}).values()
+                         if isinstance(value, dict) and value.get("error")),
+                        "source/render failure",
+                    )
             except Exception as exc:  # never kill the scheduler thread
+                error = type(exc).__name__
                 print("ingest loop error: %s" % exc, file=sys.stderr, flush=True)
             finally:
                 ingestor.close()
+            finished = utc_now()
+            moment = parse_iso(finished)
+            next_at = ((moment + timedelta(seconds=interval)).replace(microsecond=0)
+                       .isoformat()) if moment else None
+            self._write(
+                state="idle", last_attempt_started_at=attempt_started,
+                last_finished_at=finished, last_ok=ok, last_error=error,
+                next_check_at=next_at,
+            )
             self.stop_event.wait(interval)
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._loop, name="ingest-scheduler", daemon=True)
         self.thread.start()
+        self.heartbeat_thread = threading.Thread(
+            target=self._heartbeat, name="ingest-heartbeat", daemon=True)
+        self.heartbeat_thread.start()
 
     def stop(self) -> None:
         self.stop_event.set()
+        self._write(state="stopped", next_check_at=None)
+
+
+def scheduler_runtime(config: Config) -> dict:
+    """Read the persisted scheduler state (used by tests/diagnostics)."""
+    return read_scheduler_state(config.state_dir)
 
 
 def cmd_serve(args) -> int:

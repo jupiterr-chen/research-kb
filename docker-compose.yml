@@ -41,3 +41,30 @@ services:
     volumes:
       - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/state/syncthing:/var/syncthing
       - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/vault:/data
+
+  # Read-only Syncthing status collector. Uses host networking ONLY so it can
+  # reach the loopback Syncthing REST API; it listens on no port and only issues
+  # GET requests. It reads the config/key via a narrow read-only mount and writes
+  # a sanitized snapshot that the library reads for the public status endpoint.
+  status-collector:
+    build: .
+    image: research-kb-library:0.1.0
+    container_name: research-kb-status-collector
+    restart: unless-stopped
+    network_mode: host
+    command: ["python", "-m", "library.collector"]
+    healthcheck:
+      disable: true
+    environment:
+      RESEARCHKB_SYNCTHING_CONFIG: /syncthing-config/config.xml
+      RESEARCHKB_MONITOR_DIR: /monitor
+      RESEARCHKB_SYNCTHING_GUI: ${RESEARCHKB_SYNCTHING_GUI:-http://127.0.0.1:8384}
+      RESEARCHKB_SYNCTHING_FOLDER: ${RESEARCHKB_SYNCTHING_FOLDER:-}
+      RESEARCHKB_SYNCTHING_PEER_ALIAS: ${RESEARCHKB_SYNCTHING_PEER_ALIAS:-Windows 设备}
+      RESEARCHKB_SYNCTHING_PEER_ID: ${RESEARCHKB_SYNCTHING_PEER_ID:-}
+      RESEARCHKB_MONITOR_INTERVAL: ${RESEARCHKB_MONITOR_INTERVAL:-20}
+    volumes:
+      - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/state/syncthing/config:/syncthing-config:ro
+      - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/state/monitor:/monitor
+    depends_on:
+      - syncthing

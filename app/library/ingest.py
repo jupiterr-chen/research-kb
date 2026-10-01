@@ -49,15 +49,18 @@ class Ingestor:
                 try:
                     existing = self.catalog.existing_version_map(source)
                     adapter = build_adapter(source_config, existing_versions=existing)
+                    self.catalog.mark_source_attempt(source)
                     scan = adapter.scan()
-                    self.catalog.commit_snapshot(
+                    commit = self.catalog.commit_snapshot(
                         source, scan.documents, scan.snapshot, scan.counts
                     )
                     summary["sources"][source] = {
-                        "ok": True, "documents": len(scan.documents), "counts": scan.counts
+                        "ok": True, "documents": len(scan.documents),
+                        "counts": scan.counts, "changes": commit.get("changes", 0),
                     }
-                    self._log("source %s ok documents=%d counts=%s" % (
-                        source, len(scan.documents), json.dumps(scan.counts, ensure_ascii=False)))
+                    self._log("source %s ok documents=%d changes=%d counts=%s" % (
+                        source, len(scan.documents), commit.get("changes", 0),
+                        json.dumps(scan.counts, ensure_ascii=False)))
                 except Exception as exc:  # isolated per-source failure
                     sanitized = "%s: source scan failed" % type(exc).__name__
                     self.catalog.record_source_error(source, sanitized)
@@ -69,16 +72,21 @@ class Ingestor:
             try:
                 rendered = render_vault(self.config, self.catalog)
                 summary["rendered"] = rendered
+                self.catalog.record_render_result(True, None, rendered)
                 self._log("render ok %s" % json.dumps(rendered, ensure_ascii=False))
             except Exception as exc:
                 sanitized = "%s: render failed" % type(exc).__name__
                 summary["ok"] = False
                 error_text = error_text or sanitized
+                self.catalog.record_render_result(False, sanitized, None)
                 self._log("render ERROR %s" % sanitized)
                 self._log(traceback.format_exc())
         finally:
             counts = {k: v.get("counts", {}) if isinstance(v, dict) else {} for k, v in summary["sources"].items()}
-            self.catalog.record_run(started, summary["ok"], counts, error_text)
+            total_changes = sum(
+                int(v.get("changes", 0)) for v in summary["sources"].values() if isinstance(v, dict)
+            )
+            self.catalog.record_run(started, summary["ok"], counts, error_text, changes=total_changes)
             lock.release()
         return summary
 

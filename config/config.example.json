@@ -25,5 +25,10 @@
     "主题研究": "人工撰写的主题/行业研究",
     "周报与复盘": "人工维护的周报与交易复盘",
     "分析草稿": "人工草稿与待整理内容"
+  },
+  "sync_monitor": {
+    "snapshot_path": "/data/state/monitor/syncthing.json",
+    "stale_after_seconds": 90,
+    "peer_alias": "Windows Vault"
   }
 }

@@ -40,6 +40,7 @@ class Config:
     sources: Dict[str, SourceConfig] = field(default_factory=dict)
     human_dirs: Dict[str, str] = field(default_factory=dict)
     dispatch_date_field: str = "coalesce"
+    sync_monitor: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Config":
@@ -50,6 +51,9 @@ class Config:
         human_dirs = data.get("human_dirs") or {}
         if not isinstance(human_dirs, dict):
             raise ConfigError("'human_dirs' must be an object mapping dir -> description")
+        sync_monitor = data.get("sync_monitor") or {}
+        if not isinstance(sync_monitor, dict):
+            raise ConfigError("'sync_monitor' must be an object when provided")
         return cls(
             bind_host=str(data.get("bind_host", "127.0.0.1")),
             bind_port=int(data.get("bind_port", 8765)),
@@ -61,6 +65,7 @@ class Config:
             sources=sources,
             human_dirs={str(k): str(v) for k, v in human_dirs.items()},
             dispatch_date_field=str(data.get("dispatch_date_field", "coalesce")),
+            sync_monitor={str(k): v for k, v in sync_monitor.items()},
         )
 
     @classmethod

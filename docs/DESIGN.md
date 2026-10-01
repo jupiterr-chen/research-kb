@@ -64,3 +64,34 @@ Obsidian 点击固定链接 -> library API -> ID 映射与允许路径检查 -> 
 ### 第五轮修订（2026-10-01，Codex A21 恢复路径 + 发布准备）
 
 15. **恢复与发布**：恢复流程明确主机 `RESEARCHKB_HOME` → 容器 `/data` 的路径映射（`catalog_db` 必须是容器路径），并要求 `--force-recreate` 重载配置，旧库/WAL/SHM 保留可回滚。可复用文件（compose、示例配置、deploy/backup/install 脚本）参数化：来源/数据/绑定地址经环境变量提供，示例与文档使用占位符，默认仅回环；真实部署值保存在被忽略的 `.env`，前后 `docker inspect` 等价。`.gitignore`/`.dockerignore` 隔离私有配置、证据与运行时数据。
+
+## 状态面板与同步观测（0.2.0，2026-10-01）
+
+本节为当前权威设计，取代早期仅含 API 链接列表的简单首页描述。
+
+### 数据流与页面
+
+`原始归档（只读）→ 统一目录/卡片 → Windows Vault`。根路径 `/` 返回中文状态面板（本地 CSS/JS，无外部 CDN）：
+- 顶部总览卡：入库状态、Windows 同步状态、文档总数/可用、下次自动检查（预计）、版本总数。
+- 入库详情：调度状态、配置间隔、是否正在运行、最近尝试/成功、心跳、下次检查、耗时、渲染结果。
+- 每来源：已编目、可用、等待/发现、缺失/冲突、最近扫描、索引文件本地观测时间。
+- 最近变化（变更账本，最多 20 条）、异常与不可用、最近入库记录。
+- Windows 同步（Syncthing）面板、元数据检索、可展开技术细节。
+
+时间以 Asia/Shanghai（UTC+8，固定偏移，避免依赖容器 tzdata）显示并显式标注；机器字段仍为 UTC。状态面板每 ~15 秒自动刷新，另有只读“刷新状态”按钮；刷新不触发入库，不提供新的可写端点。数据获取失败时保留上次结果并显示过期/错误横幅。
+
+`GET /api/v1/status` 返回与页面相同的数据模型。CSP 为 `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'`，页面所有外部字符串均以 `textContent` 写入 DOM；文档原文的 `sandbox` CSP 不变。
+
+### 变更账本（T08）
+
+`changes` 表持久化变更事件，按来源每轮成功对账计算：`ledger_baseline`、`imported`、`metadata_updated`、`new_version`、`current_changed`、`became_unavailable`、`recovered`、`content_conflict`。只比较**语义稳定字段**（标题/摘要/author/market/symbol/type/language/period/date/status/source_url）与版本身份，忽略 `last_seen_at`/`observed_at`/`mtime_ns`/fresh-hash 标志，因此无变化扫描产生 0 条事件。首次升级以**每来源**基线键 `change_ledger_initialized:<source>` 播种：已存在文档计为基线而不报告为今日新导入；新文档仍记 `imported`。失败来源不提交、不误报删除；`sources` 表另存 `last_attempt_at`/`last_error_at`。schema 迁移为非破坏性 `ALTER TABLE`/`CREATE TABLE IF NOT EXISTS`。
+
+调度运行时写入 `state/scheduler.json`（心跳 ~15s），`next_check_at = 本轮完成时间 + 间隔`，只由本调度线程决定；手动入库（`ingest_runs`）不影响下次自动检查时间。心跳过期或 `state=stopped` 时旧成功不得保持绿色。
+
+### 只读同步采集器（T09）
+
+新增 compose 服务 `status-collector`：仅 host 网络（用于访问回环 `127.0.0.1:8384` REST），无监听端口；只读挂载 `state/syncthing/config`，只发 `GET`，写**脱敏**快照到 `state/monitor/syncthing.json`（原子替换）。快照不含 API key、完整设备 ID、主机路径与对端地址；设备仅保留 7 位短标识。库容器只读该快照，`sync_monitor.snapshot_path` 缺省为 `state/monitor/syncthing.json`，`stale_after_seconds` 默认 90。未配置或无快照时面板显示未采集，不伪造数值。
+
+同步状态判定：采集失败→错误；样本过期→过期；文件夹/对端暂停→暂停；对端未连接→离线；`remoteState != valid`→未知；远端待传项>0→待传输；否则才可能“已同步至最新”。服务器本地空闲不代表 Windows 已最新；本地与远端积压分别展示。未知计数显示“未知”而非 0。同步文件数（含生成索引/笔记）与报告篇数单位不同，页面明确说明。
+
+失败关闭与脱敏（复验第 2 轮）：采集器与库两侧对上游自由文本统一 `redact_text`（绝对路径→`[path]`、长 token→`[redacted]`、限长），非空 `folder.error` 一律判 error，不被数值计数 0 掩盖；要求 poll 明确成功、样本时间可解析、folder 状态与本地/远端计数齐全、`remoteState=valid`、连接状态明确，任一缺失或无效即 unknown/error/stale，绝不显示 complete；调度心跳或下次检查时间不可解析、状态未知同样判 stale，不维持入库 ok。显式配置的 folder/peer 必须严格匹配，缺失返回 error，绝不回退到无关目标并误标为 Windows 设备。
