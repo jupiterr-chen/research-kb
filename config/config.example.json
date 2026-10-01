@@ -1,0 +1,29 @@
+{
+  "bind_host": "0.0.0.0",
+  "bind_port": 8765,
+  "catalog_db": "/data/catalog/catalog.sqlite3",
+  "vault_dir": "/data/vault",
+  "state_dir": "/data/state",
+  "public_base_url": "http://localhost:8765",
+  "ingest_interval_seconds": 3600,
+  "sources": {
+    "reports": {
+      "type": "reports_archive",
+      "root": "/archive",
+      "db": "/archive/archive.sqlite3",
+      "path_prefix": "/app/reports"
+    },
+    "discord": {
+      "type": "discord_export",
+      "root": "/discord",
+      "index": "/discord/index/documents.jsonl",
+      "meta": "/discord/index/meta.json"
+    }
+  },
+  "human_dirs": {
+    "公司研究": "人工撰写的公司研究笔记",
+    "主题研究": "人工撰写的主题/行业研究",
+    "周报与复盘": "人工维护的周报与交易复盘",
+    "分析草稿": "人工草稿与待整理内容"
+  }
+}

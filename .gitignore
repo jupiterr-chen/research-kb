@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local deployment configuration / secrets (must not be published)
+.env
+config/.env
+config/config.json
+opencode.json
+AGENTS.md
+
+# Runtime state / databases / vault / installers
+catalog/
+state/
+backups/
+vault/
+tools/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Local infrastructure / independent-review evidence (kept on disk, not published)
+docs/ENVIRONMENT.md
+docs/ACCEPTANCE.md
+docs/ISSUES.md
+docs/RUNBOOK.md
+docs/DEPLOYMENT_MANIFEST.json
+docs/OPENCODE_TASK.md
+docs/TASKBOOK.md
+docs/REVIEW-*.md
+docs/source-readmes/
+
+# Local evidence / one-off diagnostic scripts (kept on disk, not published)
+scripts/configure-syncthing-server.sh
+scripts/syncthing-status-server.sh
+scripts/lock-demo.sh
+scripts/verify-server.sh
+scripts/deploy-checks.sh
+scripts/diag_reports.py
+scripts/diag_ext.py
+scripts/diag_state.py
+scripts/scan-publication.py
+
+# OS noise
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -1,0 +1,10 @@
+.obsidian
+.stfolder
+.stversions
+.sync-conflict*
+*.tmp
+*.tmp-write
+*.partial
+Thumbs.db
+.DS_Store
+desktop.ini

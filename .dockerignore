@@ -1,0 +1,21 @@
+# Keep the build context minimal and free of private material.
+# Only `app/` is needed to build the image, but the whole tree is the context.
+.git
+.gitignore
+.dockerignore
+opencode.json
+AGENTS.md
+.env
+config/config.json
+config/.env
+catalog
+state
+backups
+vault
+tools
+docs
+**/__pycache__
+**/*.pyc
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

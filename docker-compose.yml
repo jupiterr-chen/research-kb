@@ -1,0 +1,43 @@
+name: research-kb
+
+# Reusable deployment. Provide required values via environment or a local `.env`
+# file next to this compose file (see config/.env.example). The defaults keep
+# the API on loopback only; set RESEARCHKB_BIND to a LAN address to expose it
+# on a trusted network. Source archives are always mounted read-only.
+services:
+  library:
+    build: .
+    image: research-kb-library:0.1.0
+    container_name: research-kb-library
+    restart: unless-stopped
+    environment:
+      RESEARCHKB_CONFIG: /app/config/config.json
+    volumes:
+      - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}:/data
+      - ${RESEARCHKB_REPORTS:?set RESEARCHKB_REPORTS to the reports archive root}:/archive:ro
+      - ${RESEARCHKB_DISCORD:?set RESEARCHKB_DISCORD to the discord export root}:/discord:ro
+      - ./config/config.json:/app/config/config.json:ro
+    ports:
+      - "${RESEARCHKB_BIND:-127.0.0.1}:8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8765/healthz').read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: research-kb-syncthing
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    environment:
+      HOME: /var/syncthing
+      STHOMEDIR: /var/syncthing/config
+      STGUIADDRESS: 127.0.0.1:8384
+      PUID: "0"
+      PGID: "0"
+    volumes:
+      - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/state/syncthing:/var/syncthing
+      - ${RESEARCHKB_HOME:?set RESEARCHKB_HOME to the deployment data directory}/vault:/data
